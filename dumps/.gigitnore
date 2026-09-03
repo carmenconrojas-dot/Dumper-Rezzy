@@ -1,0 +1,7 @@
+*
+!.gitignore
+!.gitkeep
+!beautify/
+!decompile/
+!dumped/
+!original/
