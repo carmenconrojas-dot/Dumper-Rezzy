@@ -1,0 +1,82 @@
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+build/
+.eggs/
+
+# ─── Node / pnpm ─────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log
+yarn-error.log
+.pnpm-debug.log
+
+# ─── TypeScript build outputs ────────────────────────────────────────────────
+*.tsbuildinfo
+out-tsc/
+dist/
+
+# ─── Expo ────────────────────────────────────────────────────────────────────
+.expo/
+.expo-shared/
+
+# ─── Bot runtime working directories ─────────────────────────────────────────
+# Each directory below manages its own contents via a local .gitignore.
+# Only the .gitkeep and local .gitignore files inside are tracked.
+# (dumps/, obfuscated/, unobfuscated/, deobfuscate/, hook_op/file_cache/)
+
+# ─── Bot runtime data (tracked with initial content — NOT ignored) ────────────
+# message_counts.json, old_message_counts.json, mvdata.json,
+# dump_user_settings.json, licenses.json, oracle_keys.json → all versioned.
+
+# ─── AI chat memory (created at runtime, not source) ─────────────────────────
+ch_memory/
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+*.log.*
+logs/
+
+# ─── Temporary files ─────────────────────────────────────────────────────────
+*.tmp
+*.temp
+*.swp
+*.bak
+*~
+
+# ─── Replit environment ──────────────────────────────────────────────────────
+.replit
+.replitignore
+.cache/
+.local/
+.upm/
+.config/
+.agents/
+
+# ─── OS generated ────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ─── Editors ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-workspace
+.cursor/
+.c9/
+*.launch
+.settings/
+.project
+.classpath
+
+# ─── Coverage / testing ──────────────────────────────────────────────────────
+coverage/
+.nyc_output/
