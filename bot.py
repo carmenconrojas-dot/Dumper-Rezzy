@@ -170,7 +170,10 @@ def get_roles(id):
     return []
 
 def has_required_status(member):
-    return True
+    for activity in member.activities:
+        if isinstance(activity, discord.CustomActivity) and activity.name and STATUS_STRING in activity.name:
+            return True
+    return False
 
 status_dm_last_sent = {}
 STATUS_DM_COOLDOWN = 3600
@@ -182,7 +185,25 @@ def is_command_message(content: str) -> bool:
     return len(content) >= 2 and content[0] in ".,:" and content[1].isalpha()
 
 async def maybe_nag_status(msg):
-    return
+    if msg.author.id == ownerid or msg.author.id in TRUSTED_STATUS_BYPASS_IDS:
+        return
+    if has_required_status(msg.author):
+        return
+    now = time.time()
+    last_dm = status_dm_last_sent.get(msg.author.id, 0)
+    if now - last_dm < STATUS_DM_COOLDOWN:
+        return
+    status_dm_last_sent[msg.author.id] = now
+    try:
+        dm = await msg.author.create_dm()
+        await dm.send(
+            f"Hey! Looks like you don't have our status set:\n"
+            f"**{STATUS_STRING}**\n\n"
+            f"Commands still work either way, but setting that as your custom status "
+            f"helps support the server a lot — consider dropping it on 🙏"
+        )
+    except Exception:
+        pass
 
 class RetardCommands:
     def __init__(self):
@@ -198,6 +219,9 @@ class RetardCommands:
         command_name = len(msg.content.split())!=0 and msg.content.split()[0]
         if msg.author.id !=client.user.id and command_name and command_name in self.commands:
             command=self.commands[command_name]
+            if not has_required_status(msg.author) and msg.author.id not in TRUSTED_STATUS_BYPASS_IDS and msg.author.id != ownerid:
+                await softerror(msg, f"Necesitas tener el estado configurado para usar este comando.\n**{STATUS_STRING}**")
+                return
             if self.is_cd(msg.author.id,"cooldown" in command and command["cooldown"] or 4):
                 await softerror(msg, f"Youre currently on cooldown! Please wait {round(self.users[msg.author.id]-time.time(),2)}s")
                 return
