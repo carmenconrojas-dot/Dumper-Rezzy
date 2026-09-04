@@ -170,10 +170,7 @@ def get_roles(id):
     return []
 
 def has_required_status(member):
-    for activity in member.activities:
-        if isinstance(activity, discord.CustomActivity) and activity.name and STATUS_STRING in activity.name:
-            return True
-    return False
+    return True
 
 status_dm_last_sent = {}
 STATUS_DM_COOLDOWN = 3600
@@ -185,25 +182,7 @@ def is_command_message(content: str) -> bool:
     return len(content) >= 2 and content[0] in ".,:" and content[1].isalpha()
 
 async def maybe_nag_status(msg):
-    if msg.author.id == ownerid or msg.author.id in TRUSTED_STATUS_BYPASS_IDS:
-        return
-    if has_required_status(msg.author):
-        return
-    now = time.time()
-    last_dm = status_dm_last_sent.get(msg.author.id, 0)
-    if now - last_dm < STATUS_DM_COOLDOWN:
-        return
-    status_dm_last_sent[msg.author.id] = now
-    try:
-        dm = await msg.author.create_dm()
-        await dm.send(
-            f"Hey! Looks like you don't have our status set:\n"
-            f"**{STATUS_STRING}**\n\n"
-            f"Commands still work either way, but setting that as your custom status "
-            f"helps support the server a lot — consider dropping it on 🙏"
-        )
-    except Exception:
-        pass
+    return
 
 class RetardCommands:
     def __init__(self):
