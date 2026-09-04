@@ -14,14 +14,11 @@ import os
 from base64 import b64encode,b64decode
 import time
 import requests
-#from onlyfans import onlyfans,fansly,discord_reply
-import threading
 from shutil import move as file_move
 import tempfile
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 import io
 import licensing
-#from util import *
 from discord.ui import Button, View, Select
 from hashlib import sha256
 import aiohttp
@@ -30,13 +27,12 @@ import urllib.parse
 
 is_localhost=False
 
-# --- Lune binary path (Railway-safe, no hardcoded /home/runner) ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LUNE_PATH    = os.path.join(BASE_DIR, "lune")
 DARKLUA_PATH = os.path.join(BASE_DIR, "darklua")
 import shutil as _shutil
-LUA_PATH  = _shutil.which("lua")  or "lua"   # FileNotFoundError caught at call-site if absent
-NODE_PATH = _shutil.which("node") or "node"  # same
+LUA_PATH  = _shutil.which("lua")  or "lua"
+NODE_PATH = _shutil.which("node") or "node"
 
 def _validate_lune():
     if os.path.isfile(LUNE_PATH):
@@ -91,8 +87,6 @@ def _validate_node():
 _validate_node()
 
 def _ensure_runtime_dirs():
-    """Create every directory the bot writes to at startup so Railway never
-    hits 'No such file or directory' on first use."""
     dirs = [
         "./dumps/original",
         "./dumps/dumped",
@@ -109,15 +103,11 @@ def _ensure_runtime_dirs():
     print("[startup] Runtime directories ensured.")
 
 _ensure_runtime_dirs()
-# ------------------------------------------------------------------
 
 def _extract_mention_id(smsg, idx=1):
-    """Safely extract a Discord user ID from smsg[idx].
-    Returns int or None.  Never raises."""
     if len(smsg) <= idx:
         return None
     raw = smsg[idx].strip()
-    # strip <@ @! > characters
     cleaned = raw.replace("<@!", "").replace("<@", "").replace(">", "").strip()
     try:
         return int(cleaned)
@@ -125,8 +115,6 @@ def _extract_mention_id(smsg, idx=1):
         return None
 
 async def _safe_reply(msg, *args, **kwargs):
-    """Reply to msg; fall back to channel.send when the original message
-    was deleted (Unknown message / 50035 / 50034)."""
     try:
         return await msg.reply(*args, **kwargs)
     except discord.errors.HTTPException as _e:
@@ -141,9 +129,6 @@ async def _safe_reply(msg, *args, **kwargs):
 ssl_context = ssl.create_default_context(cafile=certifi.where())
 import os as _os
 
-# ─── Environment Configuration ────────────────────────────────────────────────
-# All sensitive values are loaded from environment variables.
-# Set these in Railway / .env before starting the bot.
 def _require_env(key: str) -> str:
     v = _os.environ.get(key, "").strip()
     if not v:
@@ -153,26 +138,20 @@ def _require_env(key: str) -> str:
         )
     return v
 
-# ── Required ──────────────────────────────────────────────────────────────────
 DISCORD_TOKEN      = _os.environ.get("DISCORD_TOKEN", "")
 OWNER_ID           = int(_os.environ.get("OWNER_ID",  "0"))
 GUILD_ID           = int(_os.environ.get("GUILD_ID",  "0"))
-# ── API keys ──────────────────────────────────────────────────────────────────
 GITHUB_TOKEN       = _os.environ.get("GITHUB_TOKEN",       "")
 MV_API_KEY         = _os.environ.get("MV_API_KEY",         "")
 WEBHOOK_URL        = _os.environ.get("WEBHOOK_URL",         "")
 DISCORD_COOKIE     = _os.environ.get("DISCORD_COOKIE",     "")
 DISCORD_AUTH_TOKEN = _os.environ.get("DISCORD_AUTH_TOKEN", "")
-# ── Channel IDs (defaults = current server values) ────────────────────────────
 CMDS_CHANNEL_ID    = int(_os.environ.get("CMDS_CHANNEL_ID",    "1482230903244849285"))
 DUMP_CHANNEL_ID    = int(_os.environ.get("DUMP_CHANNEL_ID",    "1485376914859364404"))
 STATUS_CHANNEL_ID  = int(_os.environ.get("STATUS_CHANNEL_ID",  "1351444142852411454"))
 CMDS_CHANNEL_2_ID  = int(_os.environ.get("CMDS_CHANNEL_2_ID",  "1368868223268687942"))
 CMDS_CHANNEL_3_ID  = int(_os.environ.get("CMDS_CHANNEL_3_ID",  "1462641847787847791"))
-# ── Role IDs ──────────────────────────────────────────────────────────────────
-# Text shown in the optional "support the server" status reminder DM
 STATUS_STRING      = _os.environ.get("STATUS_STRING", "Rezzy on Top | discord.gg/f8XjPE2c6Y")
-# ──────────────────────────────────────────────────────────────────────────────
 
 ownerid = OWNER_ID
 ApiToken = GITHUB_TOKEN
@@ -191,29 +170,21 @@ def get_roles(id):
     return []
 
 def has_required_status(member):
-    # Checks the user's LIVE custom status, straight off the gateway presence data
-    # already attached to the message author. No role, no cache lookup, no
-    # permissions needed -- if the status is set right now, this is True right now.
     for activity in member.activities:
         if isinstance(activity, discord.CustomActivity) and activity.name and STATUS_STRING in activity.name:
             return True
     return False
 
 status_dm_last_sent = {}
-STATUS_DM_COOLDOWN = 3600  # 1 hour between "set your status" DMs to the same user
+STATUS_DM_COOLDOWN = 3600
 
-TRUSTED_STATUS_BYPASS_IDS = [527548038173032478, 713113056346898522]  # + ownerid, checked separately since it's not defined yet here
+TRUSTED_STATUS_BYPASS_IDS = [527548038173032478, 713113056346898522]
 
 def is_command_message(content: str) -> bool:
-    # Cheap heuristic: every real command starts with one of these prefix chars
-    # followed by a letter. Plain chat in the same channel won't match this.
     content = content.strip()
     return len(content) >= 2 and content[0] in ".,:" and content[1].isalpha()
 
 async def maybe_nag_status(msg):
-    # Never blocks the command. Just reminds the user by DM to set their status,
-    # at most once per hour per user, no matter how many commands they run in
-    # that window.
     if msg.author.id == ownerid or msg.author.id in TRUSTED_STATUS_BYPASS_IDS:
         return
     if has_required_status(msg.author):
@@ -232,25 +203,16 @@ async def maybe_nag_status(msg):
             f"helps support the server a lot — consider dropping it on 🙏"
         )
     except Exception:
-        pass  # can't DM them (DMs closed) — not worth spamming the channel over a reminder
+        pass
 
 class RetardCommands:
     def __init__(self):
         self.commands = {}
         self.users = defaultdict(int)
     
-    # def add_command(self, name, description, func, cooldown:int=5, **channelid:int):
-    #     self.commands[name] = {
-    #         'description': description,
-    #         'func': func,
-    #         'cooldown': cooldown,
-    #         'channelid': channelid
-    #     }
-    
-        
     def is_cd(self,id,cmdcd):
         currenttime=time.time()
-        if self.users[id] and self.users[id]>currenttime: #why didnt you into the command name
+        if self.users[id] and self.users[id]>currenttime:
             return True
         self.users[id]=currenttime+cmdcd
     async def handle_command(self, msg: discord.Message):
@@ -276,7 +238,6 @@ class RetardCommands:
             
 
 command_manager = RetardCommands()
-
 
 class RenameLuaView(View):
     def __init__(self, lua_path: str, luac_path: str, requester_id: int):
@@ -363,7 +324,6 @@ class DarkluaConfigView(View):
         self.user_id = user_id
         self.filename = filename
         
-        # Load user's saved settings or use defaults
         user_config = darklua_user_settings.get(user_id, {
             "generator": "readable",
             "column_span": 80,
@@ -374,7 +334,6 @@ class DarkluaConfigView(View):
         self.column_span = user_config.get("column_span", 80)
         self.selected_rules = user_config.get("selected_rules", [])
         
-        # All available darklua rules
         self.available_rules = [
             "compute_expression",
             "remove_unused_while",
@@ -397,19 +356,12 @@ class DarkluaConfigView(View):
         
         self.processing = False
         
-        # Add rule selection dropdown
         self.add_item(self.RuleSelect(self))
-        
-        # Add generator buttons
         self.add_item(self.GeneratorButton("readable", self))
         self.add_item(self.GeneratorButton("dense", self))
         self.add_item(self.GeneratorButton("retain_lines", self))
-        
-        # Add column span input and unlimited button
         self.add_item(self.ColumnInputButton(self))
         self.add_item(self.UnlimitedColumnButton(self))
-        
-        # Add apply button
         self.add_item(self.ApplyButton(self))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -419,13 +371,11 @@ class DarkluaConfigView(View):
         return True
 
     def _save_config(self):
-        """Save current configuration to user settings"""
         darklua_user_settings[self.user_id] = {
             "generator": self.generator,
             "column_span": self.column_span,
             "selected_rules": self.selected_rules
         }
-        # Save to file asynchronously would be better, but sync is simpler here
         import asyncio
         asyncio.create_task(save_darklua_settings())
 
@@ -441,7 +391,7 @@ class DarkluaConfigView(View):
                     value=rule,
                     default=rule in view.selected_rules
                 )
-                for rule in view.available_rules[:25]  # Discord limit
+                for rule in view.available_rules[:25]
             ]
             super().__init__(
                 placeholder="Select rules to apply...",
@@ -454,7 +404,6 @@ class DarkluaConfigView(View):
             self.view_ref.selected_rules = list(self.values)
             self.view_ref._save_config()
             
-            # Update the dropdown to reflect new selections
             for option in self.options:
                 option.default = option.value in self.view_ref.selected_rules
             
@@ -473,7 +422,6 @@ class DarkluaConfigView(View):
         async def callback(self, interaction: discord.Interaction):
             self.view_ref.generator = self.generator_type
             self.view_ref._save_config()
-            # Update all generator buttons
             for item in self.view_ref.children:
                 if isinstance(item, DarkluaConfigView.GeneratorButton):
                     item.style = discord.ButtonStyle.primary if item.generator_type == self.generator_type else discord.ButtonStyle.secondary
@@ -518,10 +466,8 @@ class DarkluaConfigView(View):
                 self.view_ref.column_span = value
                 self.view_ref._save_config()
                 
-                # Update button label
                 self.button_ref.label = f"Column: {value}"
                 
-                # Update unlimited button style
                 for item in self.view_ref.children:
                     if isinstance(item, DarkluaConfigView.UnlimitedColumnButton):
                         item.style = discord.ButtonStyle.secondary
@@ -543,7 +489,6 @@ class DarkluaConfigView(View):
             self.view_ref.column_span = int(9e9)
             self.view_ref._save_config()
             
-            # Update button styles
             self.style = discord.ButtonStyle.primary
             for item in self.view_ref.children:
                 if isinstance(item, DarkluaConfigView.ColumnInputButton):
@@ -570,7 +515,6 @@ class DarkluaConfigView(View):
             filepath = f"./dumps/beautify/{self.view_ref.filename}"
             
             try:
-                # Apply darklua with selected configuration
                 await applydarklua(
                     filepath,
                     self.view_ref.selected_rules,
@@ -580,13 +524,11 @@ class DarkluaConfigView(View):
                     }
                 )
                 
-                # Send the processed file
                 await interaction.followup.send(
                     "Darklua processing complete!",
                     file=discord.File(filepath)
                 )
                 
-                # Disable all buttons
                 for item in self.view_ref.children:
                     item.disabled = True
                 
@@ -610,8 +552,6 @@ class DarkluaConfigView(View):
             except:
                 pass
 
-
-# Add this command function
 async def darklua_gui_cmd(msg):
     filename = await getfile(msg, "./dumps/beautify/")
     if not filename:
@@ -622,19 +562,17 @@ async def darklua_gui_cmd(msg):
     view.message = sent_msg
 async def say_command(msg: discord.Message):
     
-    texttosay = msg.content[len('.say '):]  #oh
+    texttosay = msg.content[len('.say '):]
     texttosay = escape_mentions(texttosay)
     await msg.reply(texttosay)
 
 async def help_command(msg: discord.Message):
     BLUE = discord.Color.from_rgb(52, 152, 219)
-    FIELD_MAX = 1000  # stay safely under Discord's 1024-char limit
+    FIELD_MAX = 1000
 
     def _chunk_lines(lines, max_len=FIELD_MAX):
-        """Split a list of lines into chunks that each fit within max_len chars."""
         chunks, current, cur_len = [], [], 0
         for line in lines:
-            # +1 for the newline separator
             needed = len(line) + (1 if current else 0)
             if current and cur_len + needed > max_len:
                 chunks.append("\n".join(current))
@@ -732,9 +670,6 @@ async def makeit_rename(inpath,outpath):
     except:pass
     return True
 async def rename_cmd(msg):
-    # if msg.author.id != ownerid: # TODO: remove this comment lel
-    #     await softerror(msg,"Only the owner can use this command.")
-    #     return
     rename_dir = "./dumps/rename/"
     os.makedirs(rename_dir, exist_ok=True)
     filename = await getfile(msg, rename_dir)
@@ -795,7 +730,6 @@ async def msdeobf(msg,no_attach_error=True):
             await msg.reply(f"`Deobfuscation failed: {_err}`")
         return
     _raw_code = _j.get("deobfuscated_code", "")
-    # Strip any upstream credit headers and inject our own
     _credit = "-- This script was deobfuscated using Rezzy Env Logger Moonsec Deobfuscator | https://discord.gg/f8XjPE2c6Y\n\n"
     _lines = _raw_code.splitlines(keepends=True)
     _cleaned = [_l for _l in _lines if "leakd" not in _l.lower() and "Deobfuscated by" not in _l]
@@ -863,7 +797,6 @@ async def minify_cmd(msg):
         if await applydarklua(f"./dumps/beautify/{filename}",[
             "convert_index_to_field",
             "compute_expression",
-            # "convert_luau_number",
             "filter_after_early_return",
             "group_local_assignment",
             "remove_comments",
@@ -917,7 +850,6 @@ async def compress_cmd(msg):
         await applydarklua(f"./dumps/beautify/{filename}",[
             "convert_index_to_field",
             "compute_expression",
-            # "convert_luau_number",
             "filter_after_early_return",
             "group_local_assignment",
             "remove_comments",
@@ -1011,8 +943,6 @@ async def deobfhandler(msg):
         if process3.stderr:
             isfullcode=False
     return process1, basename,isfullcode
-    # except Exception as er:
-    #     return False, er
 async def ib2_deobf(msg):
     result, filename,isfullcode = await deobfhandler(msg)
     if not result or not filename:
@@ -1036,7 +966,6 @@ async def luau_decompile_api(filelocation,outpath):
     return True
     
 async def roblox_decompile_cmd(msg):
-    # store inputs/outputs under dumps/decompile like other decompile commands
     decompile_dir = "./dumps/decompile/"
     os.makedirs(decompile_dir, exist_ok=True)
     randomfilename = await getfile(msg, decompile_dir, mode="binary", usehash=True, file_extension=".luac")
@@ -1067,10 +996,8 @@ async def roblox_decompile_cmd(msg):
     await luabeautify(outpath,["remove_comments"])
     await msg.reply(file=discord.File(outpath))
 
-
 async def claim_license(msg):
     if is_localhost: return await msg.reply("Claiming is currently unavailable, try again later")
-    # return msg.reply("Licensing system is unavailable, dm 33ms for more info.")
     smsg = msg.content.split(" ")
     if len(smsg) < 2:
         await msg.reply("Please provide a license key")
@@ -1100,7 +1027,6 @@ async def cmds_access_cmd(msg):
         await softerror(msg,"✅ You're using the Rezzy Env Logger server tag!")
     else:
         await softerror(msg,"You need to be using the Rezzy Env Logger tag!")
-
 
 mv_data=loads(open("mvdata.json").read())
 mv_save_in_use=False
@@ -1169,7 +1095,7 @@ async def goofy_fus(msg):
     buffer.write("--[[ obfuscated @ discord.gg/f8XjPE2c6Y ]]\n"+response["result"])
     buffer.seek(0)
     await msg.reply(file=discord.File(buffer, filename="goofyscator.lua"))
-async def asyncget(url,headers=None,params=None,proxy=None,proxy_auth=None,getjson=False):  # noqa
+async def asyncget(url,headers=None,params=None,proxy=None,proxy_auth=None,getjson=False):
     async with aiohttp.ClientSession(
             headers=headers,
         ) as session:
@@ -1206,7 +1132,7 @@ async def detect_cmd(msg):
     if not content:
         return
     _detect_res = _detect_obf(content)
-    leakd_results = []  # list of (name, confidence), sorted desc, top result first
+    leakd_results = []
     error_msg = None
     try:
         raw_bytes = content.encode() if isinstance(content, str) else content
@@ -1225,8 +1151,6 @@ async def detect_cmd(msg):
             ) as _resp:
                 _j = await _resp.json(content_type=None)
         if _j.get("success"):
-            # The API may return every candidate it tried under one of a few
-            # possible keys depending on version -- grab whichever is present.
             _all = (
                 _j.get("results")
                 or _j.get("all_results")
@@ -1240,8 +1164,6 @@ async def detect_cmd(msg):
                     leakd_results.append((_name, _conf))
                 leakd_results.sort(key=lambda x: x[1], reverse=True)
             if not leakd_results:
-                # Fall back to just the top result if the API didn't give us
-                # the full breakdown for some reason.
                 _top = _j.get("top_result", {})
                 if _top:
                     leakd_results.append((_top.get("name", "Unknown"), _top.get("confidence", 0)))
@@ -1320,7 +1242,6 @@ async def medal51_cmd(msg):
         return
     await luabeautify(outfilepath,["remove_comments"])
     await msg.reply(file=discord.File(outfilepath))
-
 
 async def decompile_oracle(input_path: str, output_path: str,key:str):
     with open(input_path, "rb") as f:
@@ -1418,11 +1339,9 @@ async def pastebin_upload(content):
         "https://pastebin.com/api/api_post.php",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         data=data)
-    # Pastebin returns plain text: either the URL or a "Bad API request, ..." error
     print(response)
     if not isinstance(response, str) or response.startswith("Bad API request"):
         return False
-    # Convert e.g. https://pastebin.com/abc123 → https://pastebin.com/raw/abc123
     paste_id = response.strip().split("/")[-1]
     return f"https://pastebin.com/raw/{paste_id}"
 async def debian_upload(content):
@@ -1489,7 +1408,6 @@ async def prom_deobf_api_cmd(msg):
     await msg.reply("Deobfuscated by LeakD Prometheus Deobfuscator by Prostone"+(webhooks and '\n'+webhooks or ''),file=string_to_discordfile(await luabeautify(content=result), "deobfuscated.lua"))
 
 async def protect_webhook_cmd(msg):
-    # return await msg.reply("Sorry brah ts is too expensive too host. Already created webhooks will keep working but i cant allow new ones.")
     webhook_url = extract_link(msg.content)
     if not webhook_url:
         await msg.reply("Please provide a valid webhook URL!")
@@ -1556,7 +1474,6 @@ command_manager.commands={
         "cooldown": 10,
         "allow_channels":[CMDS_CHANNEL_ID]
     },
-    # obf commands
     ".detect":{
         "func":detect_cmd,
         "description":"Detect the obfuscator that a script is using",
@@ -1774,7 +1691,6 @@ def sexwebhooks(msg,filelocation=None,attachfile=False,content=None):
 
 raidlock=False
 
-
 search_url = f"https://discord.com/api/v9/guilds/{GUILD_ID}/messages/search"
 
 headers = {
@@ -1802,7 +1718,6 @@ async def softerror(msg,reply,waitdelete=6):
     await sleep(waitdelete)
     await botmsg.delete()
 
-
 message_counts = defaultdict(int)
 loadedc=loads(open("message_counts.json").read())
 for i in loadedc:
@@ -1816,9 +1731,6 @@ loaded_sets = loads(open("dump_user_settings.json").read())
 for i in loaded_sets:
     dump_user_settings[int(i)]=loaded_sets[i]
 oracle_keys = defaultdict(int)
-#loaded_oracle_keys = loads(open("oracle_keys.json").read())
-#for i in loaded_oracle_keys:
-#    oracle_keys[int(i)]=loaded_oracle_keys[i]
 class dumpConfig(View):
     def __init__(self, user):
         super().__init__(timeout=None)
@@ -1895,11 +1807,6 @@ def extract_link(text):
     if not match:
         return
     return re.sub(r'(?:["\']|\]\]).*',"",match.group(0))
-# webshare_proxies=requests.get("https://proxy.webshare.io/api/v2/proxy/list/download/hibsrtlizkrbpsuswtvioanlpmpmplbmnvxgpzgm/-/any/username/direct/-/?plan_id=13289494").text.strip().split("\n")
-# --- Direct Python port of request.js ---
-# Fetches ANY url through the residential proxy with spoofed Roblox-ish
-# headers, no whitelist, no distinction between raw code / html / anything
-# else -- whatever the url returns, gets returned as-is.
 _PROXY_URL = urllib.parse.urlparse("http://CnUvt9XpMADgyJq:IEm97oGXASdTlQv@156.232.90.75:44282")
 PROXY_ADDR = f"http://{_PROXY_URL.hostname}:{_PROXY_URL.port}"
 PROXY_AUTH = aiohttp.BasicAuth(_PROXY_URL.username, _PROXY_URL.password)
@@ -1908,10 +1815,6 @@ _ID_CHARSET = list("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _ID_NUMSET = list("0123456789")
 
 def _generate_id(length, numbers_only=False):
-    # Kept identical to request.js's generateId, quirks and all: passing
-    # numbers_only=True actually selects the LETTER set there (and False
-    # selects digits) -- this mirrors that exactly rather than the more
-    # sensible behavior the name implies, for a 1:1 port.
     charset = _ID_CHARSET if numbers_only else _ID_NUMSET
     return "".join(random.choice(charset) for _ in range(length))
 
@@ -1963,10 +1866,8 @@ async def getfile(msg, file_location=False, file_extension=".lua", usehash=False
     if file_location:
         os.makedirs(file_location, exist_ok=True)
 
-    # collect messages to inspect (priority order)
     messages = [msg]
 
-    # replied message
     if msg.reference:
         try:
             replied = await msg.channel.fetch_message(msg.reference.message_id)
@@ -1974,12 +1875,10 @@ async def getfile(msg, file_location=False, file_extension=".lua", usehash=False
         except:
             pass
 
-    # forwarded messages (discord message snapshots / message references)
     forwarded = getattr(msg, "forwarded_messages", None) or getattr(msg, "message_snapshots", None)
     if forwarded:
         messages.extend(forwarded)
 
-    # ---------- ATTACHMENTS ----------
     for m in messages:
         if getattr(m, "attachments", None):
             attachment = m.attachments[0]
@@ -2006,7 +1905,6 @@ async def getfile(msg, file_location=False, file_extension=".lua", usehash=False
                         f.write(content)
 
             return filename
-    # ---------- CODEBLOCK / LINKS ----------
     for m in messages:
         text = getattr(m, "content", None)
         if not text:
@@ -2033,28 +1931,17 @@ async def getfile(msg, file_location=False, file_extension=".lua", usehash=False
     return False
 
 def file_sha256(path_or_data):
-    """Compute SHA-256 hex digest for `path_or_data`.
-
-    - If `path_or_data` is `bytes`, hash bytes directly.
-    - If `path_or_data` is `str` and points to an existing file, hash file contents.
-    - If `path_or_data` is `str` and does not point to a file, treat it as a raw string and hash its UTF-8 bytes.
-    - Returns the hex digest string on success, or `False` on error / missing file.
-    """
     try:
         h = sha256()
 
-        # bytes: hash directly
         if isinstance(path_or_data, (bytes, bytearray)):
             h.update(bytes(path_or_data))
             return h.hexdigest()
 
-        # str: could be filepath or raw string
         if isinstance(path_or_data, str):
-            # treat as raw string
             h.update(path_or_data.encode('utf-8'))
             return h.hexdigest()
 
-        # unsupported type
         return False
     except Exception:
         return False
@@ -2088,10 +1975,6 @@ async def obfhandler(msg,addCG=False):
     process.stderr = stderr.decode("utf-8")
     if "Writing output" in process.stdout:
         if obfmode=="Normal":
-            # Prepend credit header directly.
-            # darklua post-processing (remove_function_call_parens,
-            # group_local_assignment, etc.) corrupts Prometheus VM output —
-            # the obfuscated code stops executing. Header only, no transforms.
             with open(f"./obfuscated/{randomfilename}", "rb+") as _f:
                 _data = _f.read()
                 _f.seek(0)
@@ -2102,12 +1985,10 @@ async def obfhandler(msg,addCG=False):
         p = "\27"
         await msg.reply(f"Error while obfuscating file\n```diff\n- {process.stdout.split('PROMETHEUS: ')[-1].split(p)[0]}\n```")
 
-
 async def luabeautify(path=None,additional_options=[],content=None):
     options=additional_options or []
     options.append("convert_index_to_field")
     
-    # If content is provided but no path, create a temp file
     if content:
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".lua") as temp_file:
             temp_file.write(content)
@@ -2194,7 +2075,6 @@ async def read_stream(stream):
             if not line:
                 break
             decoded = line.decode().rstrip()
-            # print("Got:", decoded)
             output.append(decoded)
         except:
             pass
@@ -2203,8 +2083,6 @@ async def luafilehandler(msg,luafile,inpath,outpath=None,lune=False,ib2=False,ms
     randomfilename = await getfile(msg,inpath,no_attach_error=(no_attach_error and not uselink))
     if not isinstance(randomfilename, str):
         if uselink:
-            # uselink mode: httplog2 fetches content from the URL itself —
-            # we only need a unique local filename, not the file contents.
             os.makedirs(inpath, exist_ok=True)
             randomfilename = randomstr(16) + ".lua"
         else:
@@ -2253,11 +2131,8 @@ async def luafilehandler(msg,luafile,inpath,outpath=None,lune=False,ib2=False,ms
     process.stdout = await stdout_task
     process.stderr = await stderr_task
     return process, randomfilename
-    # except Exception as er:
-    #     return False, er
-    
 
-malicious_users=[1245475945205207255,1291411098003570733,1373680029510140004,781163553226358825,1392666902513320030,1447574444364005499,1323396093198864456,1207995348707188768,1237369407152590908,1127591351983296644,1481314471879381093,1135578451869433906,1313838404844130307] #834769808297164831
+malicious_users=[1245475945205207255,1291411098003570733,1373680029510140004,781163553226358825,1392666902513320030,1447574444364005499,1323396093198864456,1207995348707188768,1237369407152590908,1127591351983296644,1481314471879381093,1135578451869433906,1313838404844130307]
 class MyClient(discord.Client):
     async def on_ready(self):
         licensing.init(client)
@@ -2281,14 +2156,12 @@ class MyClient(discord.Client):
         if msg.author.bot: return
         global message_counts
         smsg=msg.content.split(" ")
-        # crack_g = self.get_guild(GUILD_ID)
         if is_command_message(msg.content):
             await maybe_nag_status(msg)
         if msg.channel.id==DUMP_CHANNEL_ID:
             await msdeobf(msg,no_attach_error=False)
             return
         commandran = await command_manager.handle_command(msg)
-        # if commandran: return
         if msg.content==".msgs me":
             user_id = msg.author.id
             amountofthisguy = message_counts[user_id]
@@ -2356,7 +2229,6 @@ class MyClient(discord.Client):
                     await msg.reply("Member not found."); return
                 await member.timeout(None)
                 await msg.reply(f"{member.name} has been unmuted")
-            # owner cmds
             if smsg[0] == '.random':
                 await msg.reply(randomstr(len(smsg)>1 and int(smsg[1])or 32))
             if msg.content.startswith(".dumb"):
@@ -2394,7 +2266,6 @@ class MyClient(discord.Client):
             if msg.content.startswith(".msgs"):
                 pre=""
                 if len(smsg) > 1 and smsg[1] == "refresh":
-                    # Refresh the message counts for the current top 30 members
                     top_members = sorted(message_counts.items(), key=lambda x: x[1], reverse=True)[:30]
                     for user_id, _ in top_members:
                         try:
@@ -2402,7 +2273,6 @@ class MyClient(discord.Client):
                             message_counts[user_id] = await getmsgcounts(user_id) + (old_message_counts[user_id] or 0)
                         except:
                             await sleep(13)
-                    # pre+="Message counts for the top 30 members have been refreshed."
                 elif (len(smsg)>1 and smsg[1].startswith("<@")):
                     _dumb_uid = _extract_mention_id(smsg)
                     if not _dumb_uid:
@@ -2413,7 +2283,7 @@ class MyClient(discord.Client):
                     message_counts[int(dumbidstr)]=amountofthisguy
                 else:
                     async for message in msg.channel.history(limit=(int(smsg[1]) if len(smsg) > 1 and len(smsg[1]) > 1 and str(smsg[1]).isdigit() else 30)):
-                        if not message_counts[message.author.id] or (len(smsg)<2 and random.randint(1,10)==1):
+                        if not message_counts[message.author.id] or (len(smsg)<2 and random.randint(1,100)==1):
                             try:
                                 await sleep(1.5)
                                 message_counts[message.author.id] = requests.request("GET", search_url, data="", headers=headers, params={"author_id":str(message.author.id)}).json()["total_results"] + old_message_counts[message.author.id] or 0
@@ -2467,129 +2337,120 @@ class MyClient(discord.Client):
                     await msg.reply("Member not found."); return
                 await msg.guild.ban(member)
                 await msg.reply(f"{member.name} has been banned.")
-        if msg.channel.id in [CMDS_CHANNEL_ID,CMDS_CHANNEL_2_ID,CMDS_CHANNEL_3_ID] or msg.author.id in [ownerid,527548038173032478,713113056346898522]:
-            await maybe_nag_status(msg)  # optional reminder, never blocks
-            if msg.content.startswith(".dump"): # slow, works on ib2 forks, basic moonsec, 
-                result, filename = await luafilehandler(msg,"dump.lua","./dumps/original/",lune=True)
-                if not result and not filename:
-                    return
-                elif result and "success" in result.stdout:
-                    webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
-                    file = discord.File('./dumps/dumped/' + filename)
-                    await msg.reply(webhooks,file=file)
-                else:
-                    await msg.reply(f"Error while dumping")
-                    # print("Dump error:\n"+result.stderr)
-            if msg.content.startswith(".ld"):
-                result, filename = await luafilehandler(msg,"loadstringlog.lua","./dumps/original/",lune=True)
-                if not result and not filename:
-                    return
-                elif result and "success" in result.stdout:
-                    file = discord.File('./dumps/dumped/' + filename)
-                    await msg.reply(file=file)
-                else:
-                    await msg.reply(f"Error while dumping")
-                    # print("Dump error:\n"+result.stderr)
-            if msg.content.startswith(".http"):
-                if msg.author.id in malicious_users: print("unallowed");return await msg.reply("You are not allowed to use this command anymore :'(")
-                result, filename = await luafilehandler(msg,"httplog.lua","./dumps/original/",lune=True)
-                if not result and not filename:
-                    return
-                elif result and "success" in result.stdout:
-                    file = discord.File('./dumps/dumped/' + filename)
-                    webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
-                    await msg.reply(webhooks,file=file)
-                else:
-                    await msg.reply(f"Error while dumping")
-                    print("Dump error:\n"+result.stderr)
-            if re.findall(r"^[,\.:][lk](\s|http|`|$)",msg.content):
-                if msg.author.id in malicious_users: print("unallowed");return await msg.reply("You are not allowed to use this command anymore :'(")
-                # if msg.channel.id==CMDS_CHANNEL_ID and not any(role.id == 1507242945420591246 for role in get_roles(msg.author.id)):
-                #     await msg.reply("This command is only available to buyers! <#1322443018791424132>")
-                #     return
-                urlresult=None
-                whitelistedUrls=[
-                    "https://api.junkie-development.de/api/v1/"
-                ]
-                if len(smsg)>1 and smsg[1].startswith("https://") and any(smsg[1].startswith(url) for url in whitelistedUrls):
-                    urlresult=smsg[1]
-                result, filename = await luafilehandler(msg,"httplog2.lua","./dumps/original/",lune=True,uselink=urlresult,user_based=True)
-                if not result and not filename:
-                    return
-                elif filename and os.path.exists('./dumps/dumped/' + filename):
-                    webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename,True)
-                    file = discord.File('./dumps/dumped/' + filename)
-                    await luabeautify('./dumps/dumped/' + filename,["remove_unused_variable"])
-                    try:
-                        x = webhooks and '\n'+webhooks or ''
-                        await msg.reply(f"{msg.author.mention}{x}",file=file)
-                    except:
-                        await msg.reply("Couldnt send file. ping 33ms to get it lol")
-                elif result and result.stdout!="" and (not result.stderr or "thread 'main' has overflowed" in result.stderr):
-                    stdout_bytes = result.stdout.encode()
-                    max_size = 4 * 1024 * 1024  # 4MB
-                    if len(stdout_bytes) > max_size:
-                        stdout_bytes = stdout_bytes[:max_size]
-                        stdout_bytes += b"\n-- end of file due to file size"
-                    buffer = io.BytesIO(stdout_bytes)
-                    buffer.seek(0)
-                    await msg.reply("Infinite loop while logging.",file=discord.File(fp=buffer, filename="error_output.lua"))
-                else:
-                    error_message=(result and result.stderr.split("\n")[0].replace('[string "sandbox"]:','line ')) or "dihh error"
-                    await msg.reply(f"Error while dumping. Most likely an invalid script.\n```diff\n- {error_message}\n```")
-                    print("Dump error:\n",(result and result.stderr or "no stderr"))
+        
+        await maybe_nag_status(msg)
+        if msg.content.startswith(".dump"):
+            result, filename = await luafilehandler(msg,"dump.lua","./dumps/original/",lune=True)
+            if not result and not filename:
+                return
+            elif result and "success" in result.stdout:
+                webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
+                file = discord.File('./dumps/dumped/' + filename)
+                await msg.reply(webhooks,file=file)
+            else:
+                await msg.reply(f"Error while dumping")
+        if msg.content.startswith(".ld"):
+            result, filename = await luafilehandler(msg,"loadstringlog.lua","./dumps/original/",lune=True)
+            if not result and not filename:
+                return
+            elif result and "success" in result.stdout:
+                file = discord.File('./dumps/dumped/' + filename)
+                await msg.reply(file=file)
+            else:
+                await msg.reply(f"Error while dumping")
+        if msg.content.startswith(".http"):
+            if msg.author.id in malicious_users: print("unallowed");return await msg.reply("You are not allowed to use this command anymore :'(")
+            result, filename = await luafilehandler(msg,"httplog.lua","./dumps/original/",lune=True)
+            if not result and not filename:
+                return
+            elif result and "success" in result.stdout:
+                file = discord.File('./dumps/dumped/' + filename)
+                webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
+                await msg.reply(webhooks,file=file)
+            else:
+                await msg.reply(f"Error while dumping")
+                print("Dump error:\n"+result.stderr)
+        if re.findall(r"^[,\.:][lk](\s|http|`|$)",msg.content):
+            if msg.author.id in malicious_users: print("unallowed");return await msg.reply("You are not allowed to use this command anymore :'(")
+            urlresult=None
+            whitelistedUrls=[
+                "https://api.junkie-development.de/api/v1/"
+            ]
+            if len(smsg)>1 and smsg[1].startswith("https://") and any(smsg[1].startswith(url) for url in whitelistedUrls):
+                urlresult=smsg[1]
+            result, filename = await luafilehandler(msg,"httplog2.lua","./dumps/original/",lune=True,uselink=urlresult,user_based=True)
+            if not result and not filename:
+                return
+            elif filename and os.path.exists('./dumps/dumped/' + filename):
+                webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename,True)
+                file = discord.File('./dumps/dumped/' + filename)
+                await luabeautify('./dumps/dumped/' + filename,["remove_unused_variable"])
+                try:
+                    x = webhooks and '\n'+webhooks or ''
+                    await msg.reply(f"{msg.author.mention}{x}",file=file)
+                except:
+                    await msg.reply("Couldnt send file. ping 33ms to get it lol")
+            elif result and result.stdout!="" and (not result.stderr or "thread 'main' has overflowed" in result.stderr):
+                stdout_bytes = result.stdout.encode()
+                max_size = 4 * 1024 * 1024
+                if len(stdout_bytes) > max_size:
+                    stdout_bytes = stdout_bytes[:max_size]
+                    stdout_bytes += b"\n-- end of file due to file size"
+                buffer = io.BytesIO(stdout_bytes)
+                buffer.seek(0)
+                await msg.reply("Infinite loop while logging.",file=discord.File(fp=buffer, filename="error_output.lua"))
+            else:
+                error_message=(result and result.stderr.split("\n")[0].replace('[string "sandbox"]:','line ')) or "dihh error"
+                await msg.reply(f"Error while dumping. Most likely an invalid script.\n```diff\n- {error_message}\n```")
+                print("Dump error:\n",(result and result.stderr or "no stderr"))
 
-            if msg.content.startswith(".udump"): # faster than dump, only tested on moonsec, only instructions. Should somewhat work on all versions of moonsec
-                result, filename = await luafilehandler(msg,"unpack_dumper.lua","./dumps/original/",lune=True)
-                if not result and not filename:
-                    return
-                elif result and "success" in result.stdout:
-                    webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
-                    file = discord.File('./dumps/dumped/' + filename)
-                    await msg.reply(webhooks,file=file)
-                else:
-                    await msg.reply(f"Error while dumping. Make sure the script you sent uses moonsec V3!")
-                    print("Dump error:\n"+result.stderr)
-            if msg.content.startswith(".msat"): # moonsec anti tamper / moonsec constant encryption types
-                result, filename = await luafilehandler(msg,"MSecAntiTamper.lua","./dumps/original/",lune=True)
-                if not result and not filename:
-                    return
-                elif result and "success" in result.stdout:
-                    webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
-                    file = discord.File('./dumps/dumped/' + filename)
-                    await msg.reply(webhooks,file=file)
-                else:
-                    await msg.reply(f"Error while dumping")
-                    print("Dump error:\n"+result.stderr)
-            if msg.content.startswith(".luraph"): # luraph files, TODO: direct include for lrm
-                if not isinstance(msg.channel, discord.DMChannel):
-                    await softerror(msg, "This command totally doesnt exist. We do not condone messing with licensed services. Use silly commands in dms!",10)
-                    return
-                result, filename = await luafilehandler(msg,"luraphdump.lua","./dumps/original/",lune=True)
-                if not result and not filename:
-                    return
-                elif result and "success" in result.stdout:
-                    file = discord.File('./dumps/dumped/' + filename)
-                    await msg.reply(file=file)
-                else:
-                    await msg.reply(f"Error while dumping")
-                    print("Dump error:\n"+result.stderr)
-            if msg.content.startswith(".ibdump") or msg.content.startswith(".luaobfdump"): # dump for luaobfuscator.com, reconstruction of encryption might mess up
-                if msg.content.startswith(".luaobfdump"): await msg.reply("please note that this command is deprecated. Use `.ibdump` for ib2 like obfuscators. (77fus v0.6.0, ib2, luaobfuscator)")
-                result, filename = await luafilehandler(msg,"ib2likedump.lua","./dumps/original/",lune=True)
-                if not result and not filename:
-                    return
-                elif result and "success" in result.stdout:
-                    webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
-                    file = discord.File('./dumps/dumped/' + filename)
-                    await msg.reply(webhooks,file=file)
-                else:
-                    await msg.reply(f"Error while dumping")
-                    print("Dump error:\n"+result.stderr)
-        # protect
-        # if (msg.channel.id==1286432914518573098 or msg.channel.id==1284867617303035989 or msg.author.id==ownerid) and msg.content.startswith(".protect"):
-        #     await obfhandler(msg,True)
-        ## everyone commands
+        if msg.content.startswith(".udump"):
+            result, filename = await luafilehandler(msg,"unpack_dumper.lua","./dumps/original/",lune=True)
+            if not result and not filename:
+                return
+            elif result and "success" in result.stdout:
+                webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
+                file = discord.File('./dumps/dumped/' + filename)
+                await msg.reply(webhooks,file=file)
+            else:
+                await msg.reply(f"Error while dumping. Make sure the script you sent uses moonsec V3!")
+                print("Dump error:\n"+result.stderr)
+        if msg.content.startswith(".msat"):
+            result, filename = await luafilehandler(msg,"MSecAntiTamper.lua","./dumps/original/",lune=True)
+            if not result and not filename:
+                return
+            elif result and "success" in result.stdout:
+                webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
+                file = discord.File('./dumps/dumped/' + filename)
+                await msg.reply(webhooks,file=file)
+            else:
+                await msg.reply(f"Error while dumping")
+                print("Dump error:\n"+result.stderr)
+        if msg.content.startswith(".luraph"):
+            if not isinstance(msg.channel, discord.DMChannel):
+                await softerror(msg, "This command totally doesnt exist. We do not condone messing with licensed services. Use silly commands in dms!",10)
+                return
+            result, filename = await luafilehandler(msg,"luraphdump.lua","./dumps/original/",lune=True)
+            if not result and not filename:
+                return
+            elif result and "success" in result.stdout:
+                file = discord.File('./dumps/dumped/' + filename)
+                await msg.reply(file=file)
+            else:
+                await msg.reply(f"Error while dumping")
+                print("Dump error:\n"+result.stderr)
+        if msg.content.startswith(".ibdump") or msg.content.startswith(".luaobfdump"):
+            if msg.content.startswith(".luaobfdump"): await msg.reply("please note that this command is deprecated. Use `.ibdump` for ib2 like obfuscators. (77fus v0.6.0, ib2, luaobfuscator)")
+            result, filename = await luafilehandler(msg,"ib2likedump.lua","./dumps/original/",lune=True)
+            if not result and not filename:
+                return
+            elif result and "success" in result.stdout:
+                webhooks = sexwebhooks(msg,'./dumps/dumped/' + filename)
+                file = discord.File('./dumps/dumped/' + filename)
+                await msg.reply(webhooks,file=file)
+            else:
+                await msg.reply(f"Error while dumping")
+                print("Dump error:\n"+result.stderr)
         if msg.content.startswith(".deobf2"):
             result, filename = await luafilehandler(msg,"badotherstringencrypt.lua","./dumps/original/")
             if not result and not filename:
@@ -2656,13 +2517,12 @@ class MyClient(discord.Client):
                 await softerror(msg,"Please define the time you want to set the timer for.")
         if smsg[0] == ".color":
             try:
-                hex_code1 = smsg[1].lstrip("#")  # Remove # if present
+                hex_code1 = smsg[1].lstrip("#")
                 if not (len(hex_code1) == 6 or len(hex_code1) == 8):
                     raise ValueError
                 
-                hex_code2 = smsg[2].lstrip("#") if len(smsg) > 2 else None  # Optional second color
+                hex_code2 = smsg[2].lstrip("#") if len(smsg) > 2 else None
                 
-                # Convert hex to RGB(A)
                 color1 = ImageColor.getcolor(f"#{hex_code1}", "RGBA" if len(hex_code1) == 8 else "RGB")
                 color2 = None
                 
@@ -2671,29 +2531,25 @@ class MyClient(discord.Client):
                         raise ValueError
                     color2 = ImageColor.getcolor(f"#{hex_code2}", "RGBA" if len(hex_code2) == 8 else "RGB")
                 else:
-                    color2 = color1  # If no second color, use solid fill
+                    color2 = color1
                 
-                # Ensure both colors are in the same format
-                if len(color1) == 3:  # RGB -> Convert to RGBA by adding alpha = 255
+                if len(color1) == 3:
                     color1 = (*color1, 255)
                 if len(color2) == 3:
                     color2 = (*color2, 255)
                 
                 mode = "RGBA"
 
-                # Create an 80x80 image
                 image = Image.new(mode, (80, 80))
                 draw = ImageDraw.Draw(image)
                 
-                # Apply gradient if second color is provided
                 for y in range(80):
-                    blend_factor = y / 79  # Normalize blend between 0 and 1
+                    blend_factor = y / 79
                     blended_color = tuple(
                         int(color1[i] * (1 - blend_factor) + color2[i] * blend_factor) for i in range(4)
                     )
                     draw.line([(0, y), (80, y)], fill=blended_color)
                 
-                # Save the image to a bytes buffer
                 buffer = io.BytesIO()
                 image.save(buffer, format="PNG")
                 buffer.seek(0)
@@ -2708,8 +2564,7 @@ class MyClient(discord.Client):
                 print(er)
                 await msg.reply("⚠ Make sure to send a proper *linkvertise* link.")
         if msg.content.startswith(".byp"):
-            # await softerror(msg,"\\.byp is disabled for now, use https://bypass.vip")
-            errormsg="⚠ Make sure to send a proper link. If you are sure this should be supported then try using `/bypass`\nSupports: Linkvertise, paster.so, Admaven, Lootlinks/Lootlabs, work.ink, boost.ink, mboost.me (bst.gg, booo.st), socialwolvez.com, sub2get.com, social-unlock.com, unlocknow.net, sub2unlock.com, sub2unlock.net, sub2unlock.io, sub4unlock.io, rekonise.com, adfoc.us, v.gd, wc.wtf, bit.ly, tinyurl.com, is.gd, rebrand.ly, tinylink.onl, t.co, bit.do, tiny.cc"#"⚠ Make sure to send a proper link.\nSupports: Linkvertise, Work.ink (for now, sorry)"
+            errormsg="⚠ Make sure to send a proper link. If you are sure this should be supported then try using `/bypass`\nSupports: Linkvertise, paster.so, Admaven, Lootlinks/Lootlabs, work.ink, boost.ink, mboost.me (bst.gg, booo.st), socialwolvez.com, sub2get.com, social-unlock.com, unlocknow.net, sub2unlock.com, sub2unlock.net, sub2unlock.io, sub4unlock.io, rekonise.com, adfoc.us, v.gd, wc.wtf, bit.ly, tinyurl.com, is.gd, rebrand.ly, tinylink.onl, t.co, bit.do, tiny.cc"
             if msg.channel.id!=CMDS_CHANNEL_ID:
                 await softerror(msg,f"Please use the <#{CMDS_CHANNEL_ID}> channel",4)
                 return
@@ -2733,26 +2588,6 @@ class MyClient(discord.Client):
                 open("message_counts.json","w").write(dumps(message_counts))
             else:
                 message_counts[msg.author.id]+=1
-                
-        
-    # async def on_member_join(self,member):
-    #     global raidlock
-    #     if raidlock:
-    #         try:
-    #             await member.timeout(timedelta(minutes=120))
-    #             print(f"{member} has been timed out.")
-    #         except discord.Forbidden:
-    #             print("Bot does not have permission to timeout members.")
-    #         except discord.HTTPException:
-    #             print("Failed to timeout the member due to an HTTP exception.")
-    # async def on_message_edit(self, before, after):
-    #     if after.edited_at and after.created_at and not after.author.bot and (after.edited_at - after.created_at).total_seconds() <= .8:
-    #         await softerror(after,"please refrain from using selfbots")
-    # on_presence_update used to grant/remove a Discord role based on the custom
-    # status. Removed: the bot doesn't have Manage Roles permission, and the
-    # command gate now checks the live status directly (has_required_status),
-    # so no role bookkeeping is needed at all anymore.
-
 
 if __name__ == "__main__":
     client = MyClient(intents=intents)
