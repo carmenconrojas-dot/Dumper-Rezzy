@@ -2467,11 +2467,6 @@ class MyClient(discord.Client):
                     await msg.reply("Member not found."); return
                 await msg.guild.ban(member)
                 await msg.reply(f"{member.name} has been banned.")
-        if msg.channel.id == STATUS_CHANNEL_ID and re.findall(r"^\.l(\s|http|`|$)",msg.content):
-            if msg.author.id in [ownerid,527548038173032478,713113056346898522]:
-                pass
-            else:
-                return await softerror(msg,f"Use this in dms or <#{CMDS_CHANNEL_ID}>",15)
         if msg.channel.id in [CMDS_CHANNEL_ID,CMDS_CHANNEL_2_ID,CMDS_CHANNEL_3_ID] or msg.author.id in [ownerid,527548038173032478,713113056346898522]:
             await maybe_nag_status(msg)  # optional reminder, never blocks
             if msg.content.startswith(".dump"): # slow, works on ib2 forks, basic moonsec, 
