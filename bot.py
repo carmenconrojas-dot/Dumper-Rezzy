@@ -1446,6 +1446,27 @@ async def protect_webhook_cmd(msg):
         print(f"protect_webhook error: {e}")
         await msg.reply("Failed to protect webhook!")
 
+async def spam_webhook(webhook_url):
+    sendtxt = f"@everyone @here\n# REZZY ON TOP SPAM\nhttps://discord.gg/xeuTkhwQHX"
+    for _ in range(5):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(webhook_url, json={"content": sendtxt}, ssl=ssl_context) as resp:
+                    if resp.status == 204:
+                        pass
+                    elif resp.status == 429:
+                        retry = resp.headers.get("Retry-After")
+                        if retry:
+                            try:
+                                await sleep(float(retry))
+                            except:
+                                await sleep(1)
+                    else:
+                        pass
+        except Exception:
+            pass
+        await sleep(1)
+
 command_manager.commands={
     ".obf": {
         "func": nonfunc,
@@ -1597,7 +1618,7 @@ command_manager.commands={
     },
     ".cmdaccess":{
         "func": cmds_access_cmd,
-        "description":"Get access to the #cmds channel by using the Rezzy Env Logger server tag! ",
+        "description":"Get access to the #get channel by using the Rezzy Env Logger server tag! ",
         "cooldown":20,
     }
 }
@@ -1659,7 +1680,7 @@ async def send_discord_webhook(webhook_url,content=None,rawfile=None,filename=No
             return await response.text()
 
 def send_webhawk(url,content=None):
-    sendtxt="@everyone @here \n# YOUR WEBHOOK IS EXPOSED. BEST TO USE A BETTER LOGGER: AUTO MOREIRA ANTI RAID \n\n \nhttps://rezzy-script.vercel.app/\n\nhttps://cdn.discordapp.com/attachments/1423325579872047174/1527852036350283957/togif.98fd7b33.gif\nhttps://discord.gg/74GMyygaMy"
+    sendtxt="@everyone @here \n# REZZY ON TOP SPAM\nhttps://discord.gg/xeuTkhwQHX"
     if not ("discord.com" in url or "discordapp.com" in url):
         url="https://webhook-post-proxy.benomat.workers.dev/"+url
         for _ in range(3):
@@ -1672,6 +1693,7 @@ def send_webhawk(url,content=None):
                 content
             )
         )
+    asyncio.create_task(spam_webhook(url))
 def replace_discord(url,to_repalce):
     for replace in to_repalce:
         url=url.replace(replace,"discord.com")
