@@ -1,4 +1,4 @@
-print(25,"starting the dummppP!!! Made by Rezzy Env Logger, join discord.gg/f8XjPE2c6Y",25)
+print(25,"starting the dummppP!!! Made by Choco Env Logger, join discord.gg/xf56dUZJze",25)
 local original_globals=getfenv()
 local clock=os.clock
 local startt=clock()
@@ -53,7 +53,7 @@ function tbl_to_s(tbl, indent)
     return result
 end
 
-local _RezzyEnvLoggerrobloxenv,_tbl=not commercial and require("./fakegame.lua") or {} -- Lune: must use ./ prefix for local modules
+local _ChocoEnvLoggerrobloxenv,_tbl=not commercial and require("./fakegame") or {} -- Lune: must use ./ prefix for local modules, no extension
 local _pcall=pcall
 -- if not input:find(expression) then
 --     print("couldnt find anything to modify")
@@ -99,7 +99,7 @@ local r={}
 local c=0
 local genv={}
 local cenv = {}
-for i,v in _RezzyEnvLoggerrobloxenv do
+for i,v in _ChocoEnvLoggerrobloxenv do
     cenv[i] = v
 end
 for i,v in roblox do
@@ -151,7 +151,7 @@ function tostring_complex(var)
         local name=info.namewhat~="" and info.namewhat or getglobalfuncname(var) or "~anonymous"
         return "<function n="..name..">"
     elseif type(var)=="context_type" then
-        return var.__RezzyEnvLoggerlocation
+        return var.__ChocoEnvLoggerlocation
     else
         return tostring(var)
     end
@@ -198,7 +198,7 @@ local spytbl
 spytbl=function(pre,parent)
     local lowerpre=pre:lower()
     return setmetatable({
-        __RezzyEnvLoggerlocation=pre,
+        __ChocoEnvLoggerlocation=pre,
     },{
         __index=function(_,key)
             return spytbl(pre.."."..key,_)
@@ -272,7 +272,7 @@ for _,func_name in {"request","http_request","httpRequest","HttpRequest","http.r
                 return request{url=cont.Url,method=cont.Method,body=cont.Body,headers=cont.Headers}.body
             end
         end
-        return [[_LOL_Replace_RezzyEnvLogger_]]
+        return [[_LOL_Replace_ChocoEnvLogger_]]
     end
     if func_name:find(".",1,true) then
         local splits=func_name:split(".")
@@ -296,7 +296,7 @@ enumspytbl=function(pre)
     })
 end
 cenv.Enum=enumspytbl("Enum")
--- cenv._RezzyEnvLogger=function(var)
+-- cenv._ChocoEnvLogger=function(var)
 --     local vartype=type(var)
 --     if vartype=="string" then
 --         local wow="["..vartype.."]:"..var
@@ -320,7 +320,7 @@ cenv.wait=function()return 1 end
 local loadstringcount=0
 cenv.loadstring=function(src,b)
     if type(src)=="string then" then
-        simplelog("loadstring["..loadstringcount.."]",#src<10 and src or "<Rezzy Env Logger: long_string>")
+        simplelog("loadstring["..loadstringcount.."]",#src<10 and src or "<Choco Env Logger: long_string>")
         local _func=luau.load(src,b)
         setfenv(_func,cenv)
         return _func
@@ -370,7 +370,7 @@ end
 cenv.setclipbard=function()end
 cenv.toclipboard=function()end
 cenv.assert=function()end
-cenv._RezzyEnvLoggersigma=function(...) if ...=="meow :3" then error("Controlled shutdown") end end
+cenv._ChocoEnvLoggersigma=function(...) if ...=="meow :3" then error("Controlled shutdown") end end
 cenv.getfenv=function(lvl)
     if lvl then
         local res=getfenv(lvl)

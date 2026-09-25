@@ -3,7 +3,7 @@
 -- Returns a flat table of global stubs used by httplog.lua / loadstringlog.lua
 -- as a base environment for analysing obfuscated scripts.
 
-local exec_env = require("./exec_env.lua")
+local exec_env = require("./exec_env")
 
 local env = {}
 
