@@ -1181,7 +1181,7 @@ async def detect_cmd(msg):
         )
         async with aiohttp.ClientSession() as _sess:
             async with _sess.post(
-                "https://leakd.up.railway.app/detect",
+                "https://leakd.vercel.app/api",
                 data=form,
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as _resp:
